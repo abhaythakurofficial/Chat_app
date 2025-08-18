@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en" class="h-full">
+    
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>SocketIO Chat — Neon</title>
+        <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+        <link rel="stylesheet" href="{{ url_for('static', filename='css/output.css') }}">
+    <style>
+        :root {
+            --glass: rgba(255, 255, 255, 0.08);
+            --neon: #60a5fa;
+        }
+
+        html,
+        body {
+            height: 100%;
+        }
+
+        body {
+            font-family: 'Outfit', system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, 'Helvetica Neue', sans-serif;
+        }
+
+        /* Subtle 3D tilt */
+        .tilt {
+            transform: perspective(1000px) rotateX(1.5deg) rotateY(-1.5deg);
+        }
+
+        /* Neon glow */
+        .glow {
+            box-shadow: 0 0 0.5rem var(--neon), 0 0 1.25rem var(--neon), inset 0 0 0.5rem rgba(96, 165, 250, 0.25);
+        }
+
+        /* Scrollbar styling */
+        .nice-scroll::-webkit-scrollbar {
+            width: 10px;
+        }
+
+        .nice-scroll::-webkit-scrollbar-thumb {
+            background: linear-gradient(180deg, #60a5fa, #a78bfa);
+            border-radius: 999px;
+        }
+
+        .glass {
+            backdrop-filter: blur(10px);
+            background: var(--glass);
+        }
+
+        .msg-enter {
+            animation: pop 200ms ease-out;
+        }
+
+        @keyframes pop {
+            from {
+                transform: scale(0.98);
+                opacity: 0;
+            }
+
+            to {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        .typing-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 999px;
+            background: white;
+            opacity: .7;
+            animation: blink 1s infinite;
+        }
+
+        .typing-dot:nth-child(2) {
+            animation-delay: .2s;
+        }
+
+        .typing-dot:nth-child(3) {
+            animation-delay: .4s;
+        }
+
+        @keyframes blink {
+
+            0%,
+            80% {
+                transform: translateY(0);
+                opacity: .5
+            }
+
+            40% {
+                transform: translateY(-2px);
+                opacity: 1
+            }
+        }
+    </style>
+</head>
+
+<body class="min-h-full bg-gradient-to-br from-slate-900 via-slate-950 to-black text-slate-100">
+    <!-- Background grid / glow -->
+    <div class="pointer-events-none fixed inset-0">
+        <div
+            class="absolute -top-20 -left-20 size-[400px] rounded-full blur-3xl opacity-30 bg-gradient-to-br from-indigo-500 to-blue-400">
+        </div>
+        <div
+            class="absolute -bottom-20 -right-20 size-[400px] rounded-full blur-3xl opacity-30 bg-gradient-to-br from-fuchsia-500 to-purple-500">
+        </div>
+        <div
+            class="absolute inset-0 bg-[radial-gradient(transparent_1px,rgba(255,255,255,0.02)_1px)] [background-size:20px_20px]">
+        </div>
+    </div>
+
+    <main class="relative mx-auto max-w-6xl p-4 sm:p-6 lg:p-8">
+        <!-- Header -->
+        <header class="tilt glass glow rounded-2xl border border-white/10 px-5 py-4 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div
+                    class="size-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 grid place-items-center shadow-lg">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="size-6" viewBox="0 0 24 24" fill="currentColor">
+                        <path
+                            d="M12 3c4.97 0 9 3.582 9 8 0 2.87-1.919 5.392-4.847 6.805-.31.155-.53.45-.587.797l-.243 1.48a1 1 0 0 1-1.539.694l-1.586-1.024a1.3 1.3 0 0 0-1.4 0l-1.586 1.024a1 1 0 0 1-1.539-.693l-.243-1.48a1.2 1.2 0 0 0-.587-.797C4.919 16.392 3 13.87 3 11c0-4.418 4.03-8 9-8Z" />
+                    </svg>
+                </div>
+                <div>
+                    <h1 class="text-xl sm:text-2xl font-extrabold tracking-tight">Neon Chat</h1>
+                    <p class="text-xs text-slate-300/80">Real‑time chat · Flask‑SocketIO</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-4">
+                <span id="me" class="text-sm text-slate-300"></span>
+                <div class="flex items-center gap-2 text-sm"><span
+                        class="size-2 rounded-full bg-emerald-400"></span><span id="online-count">online</span></div>
+            </div>
+        </header>
+
+        <!-- Content -->
+        <section class="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Sidebar: Online users -->
+            <aside class="glass rounded-2xl border border-white/10 lg:col-span-1 overflow-hidden">
+                <div class="px-5 py-4 border-b border-white/10 flex items-center justify-between">
+                    <div class="font-semibold">Online</div>
+                    <button id="renameBtn"
+                        class="text-xs px-3 py-1 rounded-lg bg-white/10 hover:bg-white/20 transition">members name</button>
+                </div>
+                <ul id="user-list" class="nice-scroll max-h-[60vh] overflow-y-auto p-3 space-y-2"></ul>
+            </aside>
+
+            <!-- Chat panel -->
+            <div class="lg:col-span-2 glass rounded-3xl border border-white/10 p-0 flex flex-col h-[70vh]">
+                <div id="messages" class="nice-scroll flex-1 overflow-y-auto p-4 sm:p-6 space-y-3"></div>
+
+                <!-- Input dock -->
+                <div class="p-3 border-t border-white/10">
+                    <div id="" class="flex items-center gap-2">
+                        <input id="msg" autocomplete="off" placeholder="Type a message…"
+                            class="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
+                        <button
+                            onclick="sendMessage()"
+                            class="px-4 py-3 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 hover:brightness-110 active:translate-y-[1px] transition shadow-lg glow">Send</button>
+                    
+                    <div id="typing" class="h-6 mt-1 text-xs text-slate-300/80 hidden items-center gap-1">
+                        <div class="typing-dot"></div>
+                        <div class="typing-dot"></div>
+                        <div class="typing-dot"></div>
+                        <span>Someone is typing…</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+
+        <script>
+        const myName = "{{ name }}";
+
+        const socket = io();
+
+        socket.on('connect', () => {
+            console.log("Connected to server");
+        
+        });
+
+        const users = new Set(); // store unique usernames
+
+        socket.on('message', (data) => {
+            // show message
+            const li = document.createElement("li");
+            li.textContent = data.name +': ➡️ ' + data.msg;
+            document.getElementById("messages").appendChild(li);
+            
+            // check if user already exists
+            if (!users.has(data.name)) {
+                users.add(data.name);
+
+                const u_li = document.createElement("li");
+                u_li.textContent = data.name;
+                document.getElementById("user-list").appendChild(u_li);
+            }
+        });
+
+
+        function sendMessage() {
+            const msg = document.getElementById("msg").value;
+            socket.emit("message", { name: myName, msg: msg });
+            document.getElementById("msg").value = "";
+        }
+        </script>
+
+
+        
+</body>
+
+</html>
